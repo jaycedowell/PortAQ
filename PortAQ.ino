@@ -14,53 +14,113 @@ Adafruit_RGBLCDShield lcd = Adafruit_RGBLCDShield();
 #define ON 0x1
 #define OFF 0x0
 
+int ledActive=6;
+int ledOn=5;
+
 int dustPin=0;
 int ledPower=2;
 int delayTime=280;
 int delayTime2=40;
 int offTime=9680;
 
-int no2Pin=1;
+int no2Pin=2;
 int o3Pin=1;
 
-int blStatus = 0;
-int displayMode = 1;
+int blStatus = 1;
+int displayMode = 0;
+
+long tStart;
+float *d, *n, *o;
 
 void setup() {
   Serial.begin(9600);
   pinMode(ledPower, OUTPUT);
   
+  pinMode(ledActive, OUTPUT);
+  pinMode(ledOn, OUTPUT);
+    
   // Set up the LCD's number of columns and rows: 
   lcd.begin(16, 2);
+  lcd.setBacklight(ON);
+  
+  // Initialize the time comparizon
+  tStart = millis();
+  
+  // Initalize the data arrays
+  d = (float *) malloc(3*sizeof(float));
+  n = (float *) malloc(3*sizeof(float));
+  o = (float *) malloc(3*sizeof(float));
 }
 
 void loop() {
-  char c;
+  digitalWrite(0, HIGH);
+  
   char s[32];
-  float *d, *n, *o;
-  String command;
+  int update = 0;
+  String line1;
+  String line2;
   String response;
   
   // Update the sensor values
-  d = (float *) malloc(3*sizeof(float));
-  readDust(d);
-  n = (float *) malloc(3*sizeof(float));
-  readNO2(n);
-  o = (float *) malloc(3*sizeof(float));
-  readO3(o);
+  if( millis() - tStart > 1000 ) {
+    digitalWrite(ledActive, HIGH);
+    
+    readDust(d);
+    readNO2(n);
+    readO3(o);
+    
+    tStart = millis();
+    update = 1;
+    
+    // Report the data over serial
+    //// Dust sensor reading
+    response = "";
+    response += "Dust, ";
+    response += "Voltage: ";
+    response += dtostrf(*(d + 0), 6, 4, s);
+    response += ", Density: ";
+    response += dtostrf(*(d + 1), 6, 4, s);
+    response += ", Particles per 0.01 cubic foot: ";
+    response += dtostrf(*(d + 2), 8, 0, s);
+    Serial.println(response);
+    
+    //// NO2 reading
+    response = "";
+    response += "NO2, ";
+    response += "Voltage: ";
+    response += dtostrf(*(n + 0), 6, 4, s);
+    response += ", Resistance: ";
+    response += dtostrf(*(n + 1), 8, 0, s);
+    response += ", PPM: ";
+    response += dtostrf(*(n + 2), 6, 2, s);
+    Serial.println(response);
+    
+    //// O3 reading
+    response = "";
+    response += "O3, ";
+    response += "Voltage: ";
+    response += dtostrf(*(o + 0), 6, 4, s);
+    response += ", Resistance: ";
+    response += dtostrf(*(o + 1), 8, 0, s);
+    response += ", PPM: ";
+    Serial.println(response);
+    
+    digitalWrite(ledActive, LOW);
+  }
   
   // Check the button status
   uint8_t buttons = lcd.readButtons();
   
   if( buttons ) {
-    lcd.setCursor(0,0);
     // Backlight on/off
     if( buttons & BUTTON_SELECT ) {
       if( blStatus ) {
         lcd.setBacklight(OFF);
+        digitalWrite(ledOn, HIGH);
         blStatus = 0;
       } else {
         lcd.setBacklight(ON);
+        digitalWrite(ledOn, LOW);
         blStatus = 1;
       } 
     }
@@ -70,6 +130,7 @@ void loop() {
       if( displayMode < 0 ) {
         displayMode = 2;
       }
+      update = 1;
     }
     // Advance mode - forward
     if( buttons & BUTTON_RIGHT ) {
@@ -77,78 +138,48 @@ void loop() {
       if( displayMode > 2 ) {
         displayMode = 0;
       }
+      update = 1;
     }
   }
   
   // Update the LCD
-  lcd.setCursor(0,0);
-  response = "";
-  if( displayMode == 0 ) {
-    // Dust
-    response += "Dust:\n";
-    response += dtostrf(*(d + 2), 8, 0, s);
-    response += "part/0.01 cf";
-  } else if( displayMode == 1 ) {
-    // NO2
-    response += "NO2:\n";
-    response += dtostrf(*(n + 0), 8, 0, s);
-    response += "V";
-  } else {
-    // O3
-    response += "O3:\n";
-    response += dtostrf(*(o + 0), 8, 0, s);
-    response += "V";
+  if( update ) {
+    line1 = "";
+    line2 = "";
+    if( displayMode == 0 ) {
+      // Dust
+      line1 += "Dust: ";
+      line1 += dtostrf(*(d + 1), 4, 2, s);
+      line1 += " mg/m3";
+      line2 += dtostrf(*(d + 2), 7, 0, s);
+      line2 += " p/0.01cf";
+    } else if( displayMode == 1 ) {
+      // NO2
+      line1 += "NO2: ";
+      line1 += dtostrf(*(n + 1)/1000, 4, 1, s);
+      line1 += " kOhm  "; 
+      line2 += dtostrf(*(n + 2), 6, 4, s);
+      line2 += " ppb      ";
+    } else {
+      // O3
+      line1 += "O3: ";
+      line1 += dtostrf(*(o + 1)/1000, 4, 1, s);
+      line1 += " kOhm   "; 
+      line2 += dtostrf(*(o + 2), 6, 4, s);
+      line2 += " ppb      ";
+    }
+    lcd.setCursor(0,0);
+    lcd.print(line1);
+    lcd.setCursor(0,1);
+    lcd.print(line2);
   }
-  lcd.print(response);
   
-  // Read in a command
-  command = "";
-  while( Serial.available() > 0 )  {
-    c = (char) Serial.read();
-    command += c;
+  // Sleep for a bit
+  if( buttons != 0 ) {
+    delay(150);
+  } else {
     delay(50);
   }
-  
-  // Run the command
-  if( command.length() > 0 ) {
-    response = "";
-    if( command == "dust" ) {
-      //// Dust sensor reading
-      response += "Voltage: ";
-      response += dtostrf(*(d + 0), 6, 4, s);
-      response += "Dust Density: ";
-      response += dtostrf(*(d + 1), 6, 4, s);
-      response += "Particles per 0.01 cubic foot: ";
-      response += dtostrf(*(d + 2), 8, 0, s);
-    } else if( command == "no2" ) {
-      //// NO2 reading
-      response += "NO2: ";
-      response += "Voltage: ";
-      response += dtostrf(*(n + 0), 6, 4, s);
-      response += "Resistance: ";
-      response += dtostrf(*(n + 1), 8, 0, s);
-      response += "PPM: ";
-      response += dtostrf(*(n + 2), 6, 2, s);
-    } else if( command == "o3" ) {
-      //// O3 reading
-      response += "O3: ";
-      response += "Voltage: ";
-      response += dtostrf(*(o + 0), 6, 4, s);
-      response += "Resistance: ";
-      response += dtostrf(*(o + 1), 8, 0, s);
-      response += "PPM: ";
-      response += dtostrf(*(o + 2), 6, 2, s);
-    }
-    
-    // Return the result
-    Serial.println(response);
-  }
-  
-  free(d);
-  free(n);
-  free(o);
-  
-  delay(500);
 }
 
 /*
@@ -212,6 +243,7 @@ void readNO2(float *data) {
   gasVal = 0;
   for(i=0; i<10; i++) {
     gasVal += analogRead(no2Pin); // read the NO2 value
+    delayMicroseconds(offTime);
   }
   
   voltage = 5.0*gasVal/10.0/1024.0;
@@ -233,6 +265,7 @@ void readO3(float *data) {
   gasVal = 0;
   for(i=0; i<10; i++) {
     gasVal += analogRead(o3Pin); // read the O3 value
+    delayMicroseconds(offTime);
   }
   
   voltage = 5.0*gasVal/10.0/1024.0;
