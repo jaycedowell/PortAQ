@@ -10,32 +10,48 @@
 // the I2C bus.
 Adafruit_RGBLCDShield lcd = Adafruit_RGBLCDShield();
 
-// These #defines make it easy to set the backlight color
+// These #define statements make it easy to set the backlight color
 #define ON 0x1
 #define OFF 0x0
 
+// Backlight state (1 = on)
+int blStatus = 1;
+
+// Status indicator LEDs, active = measuring, on = unit on, backlight off
 int ledActive=6;
 int ledOn=5;
 
+// Setup for the dust sensor
 int dustPin=0;
 int ledPower=2;
 int delayTime=280;
 int delayTime2=40;
 int offTime=9680;
 
+// Setup for the gas sensors
 int no2Pin=2;
 int o3Pin=1;
 
-int blStatus = 1;
+// Menu location (0 = dust, 1 = NO2, or 2 = O3)
 int displayMode = 0;
 
+// Timer value in ms for loop/measurement control
 long tStart;
+
+// Pointers to store the sensor data
 float *d, *n, *o;
 
+
+/*
+ Setup
+*/
+
 void setup() {
+  // Setup the serial interface for reporting data to a computer
   Serial.begin(9600);
-  pinMode(ledPower, OUTPUT);
   
+  // Setup the LEDs that we will be using
+  pinMode(ledPower, OUTPUT);
   pinMode(ledActive, OUTPUT);
   pinMode(ledOn, OUTPUT);
     
@@ -52,17 +68,20 @@ void setup() {
   o = (float *) malloc(3*sizeof(float));
 }
 
+
+/*
+ Main loop
+*/
+
 void loop() {
-  digitalWrite(0, HIGH);
-  
   char s[32];
   int update = 0;
   String line1;
   String line2;
   String response;
   
-  // Update the sensor values
-  if( millis() - tStart > 1000 ) {
+  // Update the sensor values every two seconds
+  if( millis() - tStart > 2000 ) {
     digitalWrite(ledActive, HIGH);
     
     readDust(d);
@@ -125,7 +144,7 @@ void loop() {
       } 
     }
     // Advance mode - backward
-    if( buttons & BUTTON_LEFT ) {
+    if( buttons & BUTTON_LEFT || buttons & BUTTON_DOWN ) {
       displayMode -= 1;
       if( displayMode < 0 ) {
         displayMode = 2;
@@ -133,7 +152,7 @@ void loop() {
       update = 1;
     }
     // Advance mode - forward
-    if( buttons & BUTTON_RIGHT ) {
+    if( buttons & BUTTON_RIGHT || buttons & BUTTON_UP) {
       displayMode += 1;
       if( displayMode > 2 ) {
         displayMode = 0;
@@ -151,8 +170,8 @@ void loop() {
       line1 += "Dust: ";
       line1 += dtostrf(*(d + 1), 4, 2, s);
       line1 += " mg/m3";
-      line2 += dtostrf(*(d + 2), 7, 0, s);
-      line2 += " p/0.01cf";
+      line2 += dtostrf(*(d + 2)*100/1000.0, 5, 1, s);
+      line2 += " kp/cf     ";
     } else if( displayMode == 1 ) {
       // NO2
       line1 += "NO2: ";
@@ -175,12 +194,13 @@ void loop() {
   }
   
   // Sleep for a bit
-  if( buttons != 0 ) {
+  if( buttons ) {
     delay(150);
   } else {
     delay(50);
   }
 }
+
 
 /*
  Interface to Sharp GP2Y1010AU0F Particle Sensor
@@ -233,6 +253,16 @@ void readDust(float *data) {
   *(data + 2) = ppmpercf;
 }
 
+
+/*
+ Interface to SGX Sensortech MiCS-2710 nitrogen dioxide sensor
+ 
+ Pin 1: Arduino A2 pin and GND via a 10K ohm resistor
+ Pin 2: 3.3V via a 47 ohm resistor
+ Pin 3: 3.3V
+ Pin 4: GND
+*/
+
 void readNO2(float *data) {
   int i;
   int gasVal;
@@ -246,14 +276,27 @@ void readNO2(float *data) {
     delayMicroseconds(offTime);
   }
   
+  // Average ADC counts -> voltage
   voltage = 5.0*gasVal/10.0/1024.0;
+  // Convert the voltage to a resistance
   resistance = (3.3/voltage - 1)*10000.0;
+  // Convert the resistance to a concentration
   ppm = 1.0*voltage;
   
   *(data + 0) = voltage;
   *(data + 1) = resistance;
   *(data + 2) = ppm;
 }
+
+
+/*
+ Interface to SGX Sensortech MiCS-2710 ozone sensor
+ 
+ Pin 1: Arduino A1 pin and GND via a 10K ohm resistor
+ Pin 2: 3.3V via a 33 ohm resistor
+ Pin 3: 3.3V
+ Pin 4: GND
+*/
 
 void readO3(float *data) {
   int i;
@@ -268,8 +311,11 @@ void readO3(float *data) {
     delayMicroseconds(offTime);
   }
   
+  // Average ADC counts -> voltage
   voltage = 5.0*gasVal/10.0/1024.0;
+  // Convert the voltage to a resistance
   resistance = (3.3/voltage - 1)*10000.0;
+  // Convert the resistance to a concentration
   ppm = 1.0*voltage;
   
   *(data + 0) = voltage;
