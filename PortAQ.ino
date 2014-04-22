@@ -3,6 +3,7 @@
 #include <Adafruit_RGBLCDShield.h>
 
 #include <stdlib.h>
+#include <math.h>
 
 // The shield uses the I2C SCL and SDA pins. On classic Arduinos
 // this is Analog 4 and 5 so you can't use those for analogRead() anymore
@@ -178,14 +179,14 @@ void loop() {
       line1 += dtostrf(*(n + 1)/1000, 4, 1, s);
       line1 += " kOhm  "; 
       line2 += dtostrf(*(n + 2), 6, 4, s);
-      line2 += " ppb      ";
+      line2 += " ppm      ";
     } else {
       // O3
       line1 += "O3: ";
       line1 += dtostrf(*(o + 1)/1000, 4, 1, s);
       line1 += " kOhm   "; 
       line2 += dtostrf(*(o + 2), 6, 4, s);
-      line2 += " ppb      ";
+      line2 += " ppm      ";
     }
     lcd.setCursor(0,0);
     lcd.print(line1);
@@ -280,8 +281,9 @@ void readNO2(float *data) {
   voltage = 5.0*gasVal/10.0/1024.0;
   // Convert the voltage to a resistance
   resistance = (3.3/voltage - 1)*10000.0;
-  // Convert the resistance to a concentration
-  ppm = 1.0*voltage;
+  // Convert the resistance to a concentration - sensor specific
+  // R @ fresh air is 6710 ohm
+  ppm = 0.0353*pow(resistance/6710.0, 0.540);
   
   *(data + 0) = voltage;
   *(data + 1) = resistance;
@@ -315,8 +317,10 @@ void readO3(float *data) {
   voltage = 5.0*gasVal/10.0/1024.0;
   // Convert the voltage to a resistance
   resistance = (3.3/voltage - 1)*10000.0;
-  // Convert the resistance to a concentration
-  ppm = 1.0*voltage;
+  // Convert the resistance to a  - sensor specific
+  // R @ 100 ppb is 75970 ohm
+  ppm = 10.05*pow(resistance/75970.0, 2) + 80.5*resistance/75970.0 + 4.54;
+  ppm = ppm / 1000;
   
   *(data + 0) = voltage;
   *(data + 1) = resistance;
