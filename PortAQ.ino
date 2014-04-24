@@ -196,9 +196,7 @@ void loop() {
   
   // Sleep for a bit
   if( buttons ) {
-    delay(150);
-  } else {
-    delay(50);
+    delay(250);
   }
 }
 
